@@ -22,6 +22,8 @@ export function SpinnyButton() {
               const errors = result.details.error;
               if (errors) {
                 setErrors(errors.toString());
+              } else {
+                setSuccess(true);
               }
             })
             .finally(() => setRunning(false));
