@@ -15,6 +15,25 @@ export type DockerRun = {
 
 const execAsync = promisify(exec);
 
+// Helper function to check if stderr contains actual errors
+function containsActualError(stderr: string): boolean {
+  // Ignore warnings about deprecated version
+  if (stderr.includes('the attribute `version` is obsolete')) {
+    return false;
+  }
+
+  // Add more warning patterns to ignore if needed
+  const ignorablePatterns = ['warning', 'Warning', 'deprecat', 'Deprecat'];
+
+  // Check if stderr contains any content that isn't just warnings
+  const lines = stderr.split('\n').filter((line) => line.trim());
+  const hasOnlyWarnings = lines.every((line) =>
+    ignorablePatterns.some((pattern) => line.includes(pattern))
+  );
+
+  return !hasOnlyWarnings;
+}
+
 export async function restartDockerCompose(): Promise<DockerRun> {
   try {
     // Get user's home directory
@@ -29,7 +48,7 @@ export async function restartDockerCompose(): Promise<DockerRun> {
       }
     );
 
-    if (downError) {
+    if (downError && containsActualError(downError)) {
       console.error('Error during docker compose down:', downError);
       throw new Error('Failed to stop containers');
     }
@@ -45,7 +64,7 @@ export async function restartDockerCompose(): Promise<DockerRun> {
       }
     );
 
-    if (upError) {
+    if (upError && containsActualError(upError)) {
       console.error('Error during docker compose up:', upError);
       throw new Error('Failed to start containers');
     }
@@ -56,6 +75,11 @@ export async function restartDockerCompose(): Promise<DockerRun> {
       details: {
         down: downOutput,
         up: upOutput,
+        // Include stderr as part of the details for debugging
+        error:
+          downError || upError
+            ? `Down: ${downError}\nUp: ${upError}`
+            : undefined,
       },
     };
   } catch (error) {
