@@ -1,7 +1,6 @@
 'use server';
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 
 export type DockerRun = {
   success: boolean;
@@ -13,19 +12,14 @@ export type DockerRun = {
   };
 };
 
-const execAsync = promisify(exec);
-
 // Helper function to check if stderr contains actual errors
 function containsActualError(stderr: string): boolean {
-  // Ignore warnings about deprecated version
   if (stderr.includes('the attribute `version` is obsolete')) {
     return false;
   }
 
-  // Add more warning patterns to ignore if needed
   const ignorablePatterns = ['warning', 'Warning', 'deprecat', 'Deprecat'];
 
-  // Check if stderr contains any content that isn't just warnings
   const lines = stderr.split('\n').filter((line) => line.trim());
   const hasOnlyWarnings = lines.every((line) =>
     ignorablePatterns.some((pattern) => line.includes(pattern))
@@ -34,18 +28,54 @@ function containsActualError(stderr: string): boolean {
   return !hasOnlyWarnings;
 }
 
+// Helper to execute a command and stream logs
+function executeCommand(
+  command: string,
+  args: string[],
+  cwd: string
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const process = spawn(command, args, { cwd });
+
+    let stdout = '';
+    let stderr = '';
+
+    process.stdout.on('data', (data) => {
+      const output = data.toString();
+      stdout += output;
+      console.log(output); // Log stdout as it streams
+    });
+
+    process.stderr.on('data', (data) => {
+      const errorOutput = data.toString();
+      stderr += errorOutput;
+      console.error(errorOutput); // Log stderr as it streams
+    });
+
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(`Command failed with code ${code}`));
+      }
+    });
+
+    process.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
 export async function restartDockerCompose(): Promise<DockerRun> {
   try {
-    // Get user's home directory
     const homeDir = process.env.HOME || process.env.USERPROFILE;
     const composePath = `${homeDir}/QbitExpress`;
 
-    // Execute docker-compose down
-    const { stdout: downOutput, stderr: downError } = await execAsync(
-      'docker compose down',
-      {
-        cwd: composePath,
-      }
+    console.log('Stopping Docker containers...');
+    const { stdout: downOutput, stderr: downError } = await executeCommand(
+      'docker',
+      ['compose', 'down'],
+      composePath
     );
 
     if (downError && containsActualError(downError)) {
@@ -53,15 +83,13 @@ export async function restartDockerCompose(): Promise<DockerRun> {
       throw new Error('Failed to stop containers');
     }
 
-    // Wait for a brief moment to ensure all containers are properly stopped
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    // Execute docker-compose up -d
-    const { stdout: upOutput, stderr: upError } = await execAsync(
-      'docker compose up -d',
-      {
-        cwd: composePath,
-      }
+    console.log('Starting Docker containers...');
+    const { stdout: upOutput, stderr: upError } = await executeCommand(
+      'docker',
+      ['compose', 'up', '-d'],
+      composePath
     );
 
     if (upError && containsActualError(upError)) {
@@ -75,7 +103,6 @@ export async function restartDockerCompose(): Promise<DockerRun> {
       details: {
         down: downOutput,
         up: upOutput,
-        // Include stderr as part of the details for debugging
         error:
           downError || upError
             ? `Down: ${downError}\nUp: ${upError}`

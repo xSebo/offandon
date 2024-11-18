@@ -20,7 +20,7 @@ export function SpinnyButton() {
           restartDockerCompose()
             .then((result) => {
               const errors = result.details.error;
-              if (errors) {
+              if (errors && !result.success) {
                 setErrors(errors.toString());
               } else {
                 setSuccess(true);
