@@ -69,7 +69,7 @@ function executeCommand(
 export async function restartDockerCompose(): Promise<DockerRun> {
   try {
     const homeDir = process.env.HOME || process.env.USERPROFILE;
-    const composePath = `${homeDir}/QbitExpress`;
+    const composePath = `${homeDir}/mediaserver/qbitExpress`;
 
     console.log('Stopping Docker containers...');
     const { stdout: downOutput, stderr: downError } = await executeCommand(
